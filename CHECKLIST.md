@@ -140,10 +140,12 @@ Describe how you approached this assignment and what key problems you identified
 Include your before/after benchmark results here.
 
 **Baseline (if you measured):**
-- Average latency: `___ ms`
-- p50 latency: `___ ms`
-- p95 latency: `___ ms`
-- Success rate: `___ %`
+- Average latency: `8458.97 ms`
+- p50 latency: `9026.53 ms`
+- p95 latency: `11318.88 ms`
+- Success rate: `0.0 %`
+
+> ⚠️ **Note:** Baseline was measured after a minimal compatibility fix in `scripts/benchmark.py` (`result["status"]` → `result.status`) because the script expected `PipelineOutput` to be subscriptable.
 
 **Your solution:**
 - Average latency: `___ ms`
