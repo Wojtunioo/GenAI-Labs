@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import closing
 from pathlib import Path
 
 from src.llm_client import OpenRouterLLMClient, build_default_llm_client
@@ -10,7 +11,6 @@ from src.types import (
     SQLExecutionOutput,
     PipelineOutput,
 )
-
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DB_PATH = BASE_DIR / "data" / "gaming_mental_health.sqlite"
@@ -33,12 +33,28 @@ class SQLValidator:
                 timing_ms=(time.perf_counter() - start) * 1000,
             )
 
-        # TODO: Implement SQL validation logic
-        # Consider what validation is needed for this use case
+        normalized = sql.strip()
+        lower = normalized.lower()
+
+        if not lower.startswith("select"):
+            return SQLValidationOutput(
+                is_valid=False,
+                validated_sql=None,
+                error="Only SELECT queries are allowed",
+                timing_ms=(time.perf_counter() - start) * 1000,
+            )
+
+        if "select *" in lower:
+            return SQLValidationOutput(
+                is_valid=False,
+                validated_sql=None,
+                error="SELECT * is not allowed",
+                timing_ms=(time.perf_counter() - start) * 1000,
+            )
 
         return SQLValidationOutput(
             is_valid=True,
-            validated_sql=sql,
+            validated_sql=normalized,
             error=None,
             timing_ms=(time.perf_counter() - start) * 1000,
         )
@@ -51,7 +67,7 @@ class SQLiteExecutor:
     def run(self, sql: str | None) -> SQLExecutionOutput:
         start = time.perf_counter()
         error = None
-        rows = []
+        rows: list[dict] = []
         row_count = 0
 
         if sql is None:
@@ -63,12 +79,14 @@ class SQLiteExecutor:
             )
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn:
                 conn.row_factory = sqlite3.Row
-                cur = conn.cursor()
-                cur.execute(sql)
-                rows = [dict(r) for r in cur.fetchmany(100)]
-                row_count = len(rows)
+                cur = conn.execute(sql)
+                try:
+                    rows = [dict(r) for r in cur.fetchmany(100)]
+                    row_count = len(rows)
+                finally:
+                    cur.close()
         except Exception as exc:
             error = str(exc)
             rows = []
@@ -114,7 +132,10 @@ class AnalyticsPipeline:
         elif not validation_output.is_valid:
             status = "invalid_sql"
         elif execution_output.error:
-            status = "error"
+            if "no such column" in execution_output.error.lower() or "no such table" in execution_output.error.lower():
+                status = "invalid_sql"
+            else:
+                status = "error"
         elif sql is None:
             status = "unanswerable"
 
@@ -136,6 +157,10 @@ class AnalyticsPipeline:
             "model": sql_gen_output.llm_stats.get("model", "unknown"),
         }
 
+        final_answer = answer_output.answer
+        if status in {"invalid_sql", "unanswerable"}:
+            final_answer = "I cannot answer this with the available table and schema. Please rephrase using known survey fields."
+
         return PipelineOutput(
             status=status,
             question=question,
@@ -146,7 +171,7 @@ class AnalyticsPipeline:
             answer_generation=answer_output,
             sql=sql,
             rows=rows,
-            answer=answer_output.answer,
+            answer=final_answer,
             timings=timings,
             total_llm_stats=total_llm_stats,
         )

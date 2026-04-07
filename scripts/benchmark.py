@@ -45,13 +45,25 @@ def main() -> None:
     totals: list[float] = []
     success = 0
     count = 0
+    total_tokens = 0
+    total_llm_calls = 0
 
     for _ in range(args.runs):
         for prompt in prompts:
             result = pipeline.run(prompt)
+            print("----")
+            print("QUESTION:", prompt)
+            print("STATUS:", result.status)
+            print("SQL:", result.sql)
+            print("ROWS:", len(result.rows))
+            print("ANSWER:")
+            print(result.answer)
+
             totals.append(result.timings["total_ms"])
             success += int(result.status == "success")
             count += 1
+            total_tokens += result.total_llm_stats.get("total_tokens", 0)
+            total_llm_calls += result.total_llm_stats.get("llm_calls", 0)
 
     summary = {
         "runs": args.runs,
@@ -60,7 +72,10 @@ def main() -> None:
         "avg_ms": round(statistics.fmean(totals), 2) if totals else 0.0,
         "p50_ms": round(percentile(totals, 50), 2),
         "p95_ms": round(percentile(totals, 95), 2),
+        "avg_tokens_per_request": round(total_tokens / count, 2) if count else 0.0,
+        "avg_llm_calls_per_request": round(total_llm_calls / count, 2) if count else 0.0,
     }
+
     print(json.dumps(summary, indent=2))
 
 
